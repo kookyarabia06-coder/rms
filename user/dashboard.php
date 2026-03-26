@@ -1,25 +1,57 @@
 <?php
+session_start();
 include '../config/db.php';
 
-if(!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'user') die("Login required");
+if(!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'user') {
+    die("Login required");
+}
 
-$uid = $_SESSION['user']['id'];
+$uid = (int)$_SESSION['user']['id'];
 $today = date('Y-m-d');
 
-// Dashboard counts
-$today_count = $conn->query("SELECT COUNT(*) as cnt FROM reservations WHERE user_id=$uid AND date='$today'")->fetch_assoc()['cnt'];
-$upcoming_count = $conn->query("SELECT COUNT(*) as cnt FROM reservations WHERE user_id=$uid AND date>'$today'")->fetch_assoc()['cnt'];
-$pencil_count = $conn->query("SELECT COUNT(*) as cnt FROM reservations WHERE user_id=$uid AND type='pencil'")->fetch_assoc()['cnt'];
-$confirmed_count = $conn->query("SELECT COUNT(*) as cnt FROM reservations WHERE user_id=$uid AND status='approved'")->fetch_assoc()['cnt'];
-$pending_count = $conn->query("SELECT COUNT(*) as cnt FROM reservations WHERE user_id=$uid AND status='pending'")->fetch_assoc()['cnt'];
-$total_count = $conn->query("SELECT COUNT(*) as cnt FROM reservations WHERE user_id=$uid")->fetch_assoc()['cnt'];
+// Function to safely execute queries and get count
+function getCount($conn, $query, $errorMessage = "Query failed") {
+    $result = $conn->query($query);
+    if ($result === false) {
+        error_log($errorMessage . ": " . $conn->error);
+        return 0;
+    }
+    if ($result->num_rows > 0) {
+        $row = $result->fetch_assoc();
+        return $row ? (int)$row['cnt'] : 0;
+    }
+    return 0;
+}
+
+// Dashboard counts with corrected column names
+// For today: Check if today's date falls within date_from and date_to range
+$today_count = getCount($conn, "SELECT COUNT(*) as cnt FROM reservations WHERE user_id=$uid AND '$today' BETWEEN date_from AND date_to", "Today count query failed");
+$upcoming_count = getCount($conn, "SELECT COUNT(*) as cnt FROM reservations WHERE user_id=$uid AND date_from > '$today'", "Upcoming count query failed");
+$pencil_count = getCount($conn, "SELECT COUNT(*) as cnt FROM reservations WHERE user_id=$uid AND type='pencil'", "Pencil count query failed");
+$confirmed_count = getCount($conn, "SELECT COUNT(*) as cnt FROM reservations WHERE user_id=$uid AND status='approved'", "Confirmed count query failed");
+$pending_count = getCount($conn, "SELECT COUNT(*) as cnt FROM reservations WHERE user_id=$uid AND status='pending'", "Pending count query failed");
+$total_count = getCount($conn, "SELECT COUNT(*) as cnt FROM reservations WHERE user_id=$uid", "Total count query failed");
 
 // Today's activities by venue
-$exec_today = $conn->query("SELECT * FROM reservations WHERE user_id=$uid AND date='$today' AND venue='Executive Lounge' ORDER BY time_from ASC");
-$aud_today = $conn->query("SELECT * FROM reservations WHERE user_id=$uid AND date='$today' AND venue='Auditorium' ORDER BY time_from ASC");
+// Check if today's date falls within the reservation period
+$exec_today = $conn->query("SELECT * FROM reservations WHERE user_id=$uid AND '$today' BETWEEN date_from AND date_to AND venue='Executive Lounge' ORDER BY time_from ASC");
+if ($exec_today === false) {
+    error_log("Executive Lounge query failed: " . $conn->error);
+    $exec_today = false;
+}
+
+$aud_today = $conn->query("SELECT * FROM reservations WHERE user_id=$uid AND '$today' BETWEEN date_from AND date_to AND venue='Auditorium' ORDER BY time_from ASC");
+if ($aud_today === false) {
+    error_log("Auditorium query failed: " . $conn->error);
+    $aud_today = false;
+}
 
 // All reservations for table
-$reservations = $conn->query("SELECT * FROM reservations WHERE user_id=$uid ORDER BY date DESC, time_from ASC");
+$reservations = $conn->query("SELECT * FROM reservations WHERE user_id=$uid ORDER BY date_from DESC, time_from ASC");
+if ($reservations === false) {
+    error_log("Reservations query failed: " . $conn->error);
+    $reservations = false;
+}
 ?>
 
 <!DOCTYPE html>
@@ -33,6 +65,18 @@ $reservations = $conn->query("SELECT * FROM reservations WHERE user_id=$uid ORDE
 <style>
     .info-box .info-box-icon { font-size: 1.7rem; }
     @media(max-width:767px){ .info-box { margin-bottom: 1rem; } }
+    .error-message { 
+        background: #f8d7da; 
+        color: #721c24; 
+        padding: 10px; 
+        margin: 10px 0; 
+        border-radius: 4px;
+        border: 1px solid #f5c6cb;
+    }
+    .date-range {
+        font-size: 0.85rem;
+        color: #666;
+    }
 </style>
 </head>
 <body class="hold-transition sidebar-mini">
@@ -51,7 +95,7 @@ $reservations = $conn->query("SELECT * FROM reservations WHERE user_id=$uid ORDE
         <!-- Dashboard Cards -->
         <?php
         $cards = [
-            ['text'=>'Today', 'count'=>$today_count, 'icon'=>'calendar-day', 'color'=>'info', 'tooltip'=>'Reservations today'],
+            ['text'=>'Today', 'count'=>$today_count, 'icon'=>'calendar-day', 'color'=>'info', 'tooltip'=>'Active reservations today'],
             ['text'=>'Upcoming', 'count'=>$upcoming_count, 'icon'=>'calendar-alt', 'color'=>'warning', 'tooltip'=>'Future reservations'],
             ['text'=>'Pencil', 'count'=>$pencil_count, 'icon'=>'pencil-alt', 'color'=>'primary', 'tooltip'=>'Pencil bookings'],
             ['text'=>'Pending', 'count'=>$pending_count, 'icon'=>'hourglass-half', 'color'=>'secondary', 'tooltip'=>'Pending approvals'],
@@ -71,42 +115,6 @@ $reservations = $conn->query("SELECT * FROM reservations WHERE user_id=$uid ORDE
         <?php endforeach; ?>
     </div>
 
-    <!-- Today's Activities -->
-    <div class="row">
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-header bg-info text-white">Executive Lounge - Today</div>
-                <div class="card-body">
-                    <?php if($exec_today->num_rows>0): ?>
-                        <ul>
-                        <?php while($row = $exec_today->fetch_assoc()): ?>
-                            <li><?php echo htmlspecialchars($row['activity_type'] . " | " . $row['time_from'] . "-" . $row['time_to'] . " | Manager: " . $row['program_manager']); ?></li>
-                        <?php endwhile; ?>
-                        </ul>
-                    <?php else: ?>
-                        <p>No activity today.</p>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-6">
-            <div class="card">
-                <div class="card-header bg-success text-white">Auditorium - Today</div>
-                <div class="card-body">
-                    <?php if($aud_today->num_rows>0): ?>
-                        <ul>
-                        <?php while($row = $aud_today->fetch_assoc()): ?>
-                            <li><?php echo htmlspecialchars($row['activity_type'] . " | " . $row['time_from'] . "-" . $row['time_to'] . " | Manager: " . $row['program_manager']); ?></li>
-                        <?php endwhile; ?>
-                        </ul>
-                    <?php else: ?>
-                        <p>No activity today.</p>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- Quick Actions -->
     <div class="mb-3">
         <a href="reservation.php" class="btn btn-primary">➕ Create New Reservation</a>
@@ -117,44 +125,66 @@ $reservations = $conn->query("SELECT * FROM reservations WHERE user_id=$uid ORDE
     <div class="card mt-3">
         <div class="card-header">Your Reservations</div>
         <div class="card-body table-responsive">
-            <table class="table table-bordered table-striped table-sm">
-                <thead>
-                    <tr>
-                        <th>Venue</th>
-                        <th>Activity Type</th>
-                        <th>Program Manager</th>
-                        <th>Date</th>
-                        <th>Time</th>
-                        <th>Status</th>
-                        <th>Type</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <?php while($row = $reservations->fetch_assoc()): 
-                        $status = $row['status'];
-                        $badge_class = $status=='approved' ? 'success' : ($status=='pending' ? 'warning' : 'danger');
-                    ?>
-                    <tr>
-                        <td><?php echo htmlspecialchars($row['venue']); ?></td>
-                        <td><?php echo htmlspecialchars($row['activity_type']); ?></td>
-                        <td><?php echo htmlspecialchars($row['program_manager']); ?></td>
-                        <td><?php echo date("m/d/Y", strtotime($row['date'])); ?></td>
-                        <td><?php echo date("h:i A", strtotime($row['time_from'])) . " - " . date("h:i A", strtotime($row['time_to'])); ?></td>
-                        <td><span class="badge badge-<?php echo $badge_class; ?>"><?php echo ucfirst($status); ?></span></td>
-                        <td><?php echo ucfirst($row['type']); ?></td>
-                        <td>
-                            <?php if($row['type']=='pencil' && $status=='pending'): ?>
-                                <button class="btn btn-primary btn-sm uploadHOBtn" data-id="<?php echo $row['id']; ?>"><i class="fas fa-upload"></i></button>
-                                <a href="cancel_reservation.php?id=<?php echo $row['id']; ?>" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure?')"><i class="fas fa-times"></i></a>
-                            <?php else: ?>
-                                <span class="text-success">Submitted</span>
-                            <?php endif; ?>
-                        </td>
-                    </tr>
-                    <?php endwhile; ?>
-                </tbody>
-            </table>
+            <?php if($reservations === false): ?>
+                <div class="error-message">
+                    <strong>Error:</strong> Unable to load reservations. Please contact administrator.
+                </div>
+            <?php elseif($reservations->num_rows > 0): ?>
+                <table class="table table-bordered table-striped table-sm">
+                    <thead>
+                        <tr>
+                            <th>Venue</th>
+                            <th>Activity Type</th>
+                            <th>Program Manager</th>
+                            <th>Date Range</th>
+                            <th>Time</th>
+                            <th>Status</th>
+                            <th>Type</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php while($row = $reservations->fetch_assoc()): 
+                            $status = $row['status'];
+                            $badge_class = $status=='approved' ? 'success' : ($status=='pending' ? 'warning' : 'danger');
+                            $today = date('Y-m-d');
+                            $is_active = ($today >= $row['date_from'] && $today <= $row['date_to']);
+                        ?>
+                        <tr <?php echo $is_active ? 'class="table-info"' : ''; ?>>
+                            <td><?php echo htmlspecialchars($row['venue']); ?></td>
+                            <td><?php echo htmlspecialchars($row['activity_type']); ?></td>
+                            <td><?php echo htmlspecialchars($row['program_manager']); ?></td>
+                            <td>
+                                <?php echo date("m/d/Y", strtotime($row['date_from'])); ?> - 
+                                <?php echo date("m/d/Y", strtotime($row['date_to'])); ?>
+                                <?php if($is_active): ?>
+                                    <span class="badge badge-info">Active</span>
+                                <?php endif; ?>
+                            </td>
+                            <td><?php echo date("h:i A", strtotime($row['time_from'])) . " - " . date("h:i A", strtotime($row['time_to'])); ?></td>
+                            <td><span class="badge badge-<?php echo $badge_class; ?>"><?php echo ucfirst($status); ?></span></td>
+                            <td><?php echo ucfirst($row['type']); ?></td>
+                            <td>
+                                <?php if($row['type']=='pencil' && $status=='pending'): ?>
+                                    <button class="btn btn-primary btn-sm uploadHOBtn" data-id="<?php echo $row['id']; ?>">
+                                        <i class="fas fa-upload"></i> Upload HO
+                                    </button>
+                                    <a href="cancel_reservation.php?id=<?php echo $row['id']; ?>" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure you want to cancel this reservation?')">
+                                        <i class="fas fa-times"></i> Cancel
+                                    </a>
+                                <?php elseif($status=='approved'): ?>
+                                    <span class="text-success"><i class="fas fa-check-circle"></i> Confirmed</span>
+                                <?php else: ?>
+                                    <span class="text-muted"><i class="fas fa-clock"></i> Pending</span>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        <?php endwhile; ?>
+                    </tbody>
+                </table>
+            <?php else: ?>
+                <p class="text-center text-muted">No reservations found. <a href="reservation.php">Create your first reservation</a></p>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -197,7 +227,7 @@ $reservations = $conn->query("SELECT * FROM reservations WHERE user_id=$uid ORDE
                                    class="form-control-file" 
                                    name="file" 
                                    accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
-                            <small class="form-text text-muted">Allowed formats: PDF, JPG, PNG, DOC, DOCX</small>
+                            <small class="form-text text-muted">Allowed formats: PDF, JPG, PNG, DOC, DOCX (Max 5MB)</small>
                         </div>
                     </div>
                 </div>

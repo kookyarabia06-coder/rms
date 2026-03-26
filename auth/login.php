@@ -1,14 +1,23 @@
 <?php
+// Start session at the beginning
+session_start();
 
-include '../config/db.php'; // Your database connection
+// Include database connection
+require_once '../config/db.php';
 
 // If already logged in → redirect based on role
 if(isset($_SESSION['user'])){
     $role = $_SESSION['user']['role'];
-    if($role=='admin') header("Location: ../admin/admin_home.php");
-    elseif($role=='superadmin') header("Location: ../superadmin/superadmin_home.php");
-    else header("Location: ../user/dashboard.php");
-    exit;
+    if($role == 'admin') {
+        header("Location: ../admin/admin_home.php");
+        exit;
+    } elseif($role == 'superadmin') {
+        header("Location: ../superadmin/superadmin_home.php");
+        exit;
+    } else {
+        header("Location: ../user/dashboard.php");
+        exit;
+    }
 }
 
 // Handle login form submission
@@ -18,13 +27,13 @@ if(isset($_POST['login'])){
     $password = $_POST['password'];
 
     $stmt = $conn->prepare("SELECT id, name, username, password, role FROM users WHERE username=?");
-    $stmt->bind_param("s",$username);
+    $stmt->bind_param("s", $username);
     $stmt->execute();
     $result = $stmt->get_result();
 
     if($result->num_rows > 0){
         $user = $result->fetch_assoc();
-        if(password_verify($password,$user['password'])){
+        if(password_verify($password, $user['password'])){
             // Set session
             $_SESSION['user'] = [
                 'id' => $user['id'],
@@ -33,18 +42,20 @@ if(isset($_POST['login'])){
                 'role' => $user['role']
             ];
 
+            // Log the login action
             logAction($conn, $user['id'], "Logged in");
 
-           if ($user_role === 'superadmin') {
-    header("Location: superadmin_home.php");
-    exit();
-} elseif ($user_role === 'admin') {
-    header("Location: admin_home.php");
-    exit();
-} elseif ($user_role === 'user') {
-    header("Location: user_home.php");
-    exit();
-}
+            // Redirect based on user role
+            if ($user['role'] === 'superadmin') {
+                header("Location: ../superadmin/superadmin_home.php");
+                exit();
+            } elseif ($user['role'] === 'admin') {
+                header("Location: ../admin/admin_home.php");
+                exit();
+            } else {
+                header("Location: ../user/dashboard.php");
+                exit();
+            }
 
         } else {
             $message = "❌ Incorrect password!";
@@ -60,17 +71,38 @@ if(isset($_POST['login'])){
 <head>
 <meta charset="UTF-8">
 <title>Login - Hospital Reservation</title>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/admin-lte@3.2/dist/css/adminlte.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/css/all.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 <style>
-body { background-color: #f4f6f9; }
-.login-box { width: 400px; margin: 80px auto; }
-.login-card-body { padding: 30px; }
-.input-group-text { background-color: #e9ecef; }
+body { 
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+.login-box { 
+    width: 400px; 
+    margin: 80px auto; 
+}
+.login-card-body { 
+    padding: 30px; 
+}
+.input-group-text { 
+    background-color: #e9ecef; 
+}
+.card {
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+}
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border: none;
+}
+.btn-primary:hover {
+    background: linear-gradient(135deg, #5a67d8 0%, #6b46a0 100%);
+}
 </style>
 </head>
-<body class="hold-transition login-page">
+<body>
 
 <div class="login-box">
   <div class="card shadow-sm">
@@ -78,7 +110,6 @@ body { background-color: #f4f6f9; }
       <h4 class="text-center mb-3"><i class="fas fa-hospital"></i> Hospital Reservation</h4>
       <p class="login-box-msg">Sign in to start your session</p>
 
-      <!-- Show error message -->
       <?php if($message): ?>
         <div class="alert alert-danger text-center">
             <i class="fas fa-exclamation-triangle"></i> <?php echo $message; ?>
@@ -110,6 +141,5 @@ body { background-color: #f4f6f9; }
 
 <script src="https://cdn.jsdelivr.net/npm/jquery@3.6.4/dist/jquery.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free/js/all.min.js"></script>
 </body>
 </html>

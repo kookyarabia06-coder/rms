@@ -1,4 +1,5 @@
 <?php
+
 require_once '../config/db.php';
 
 if(!isset($_SESSION['user']) || $_SESSION['user']['role'] != 'admin') die("Login required");

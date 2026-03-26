@@ -1,4 +1,5 @@
 <?php
+session_start();
 include '../config/db.php';
 
 // Start session if not started
