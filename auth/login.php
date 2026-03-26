@@ -6,7 +6,7 @@ include '../config/db.php'; // Your database connection
 if(isset($_SESSION['user'])){
     $role = $_SESSION['user']['role'];
     if($role=='admin') header("Location: ../admin/admin_home.php");
-    elseif($role=='superadmin') header("Location: ../admin/admin_home.php");
+    elseif($role=='superadmin') header("Location: ../superadmin/superadmin_home.php");
     else header("Location: ../user/dashboard.php");
     exit;
 }
@@ -35,12 +35,16 @@ if(isset($_POST['login'])){
 
             logAction($conn, $user['id'], "Logged in");
 
-            // Redirect based on role
-            if($user['role']=='admin' || $user['role']=='superadmin')
-                header("Location: ../admin/admin_home.php");
-            else
-                header("Location: ../user/dashboard.php");
-            exit;
+           if ($user_role === 'superadmin') {
+    header("Location: superadmin_home.php");
+    exit();
+} elseif ($user_role === 'admin') {
+    header("Location: admin_home.php");
+    exit();
+} elseif ($user_role === 'user') {
+    header("Location: user_home.php");
+    exit();
+}
 
         } else {
             $message = "❌ Incorrect password!";
